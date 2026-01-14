@@ -3,8 +3,8 @@ import random
 import zipfile
 import soundfile as sf
 import numpy as np
-#from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
-from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips 
+from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips
+
 ZIP_PATH = 'data/giphy.zip'
 EXTRACT_DIR = 'gifs_extracted'
 OUTPUT_DIR = 'outputs'
@@ -52,15 +52,15 @@ for idx, gif_file in enumerate(gif_files):
         if clip_aspect > target_aspect:
             new_height = TARGET_HEIGHT
             new_width = int(clip.w * (TARGET_HEIGHT / clip.h))
-            clip = clip.resize(height=new_height)
+            clip = clip.resized(height=new_height)
             x_center = (new_width - TARGET_WIDTH) // 2
-            clip = clip.crop(x1=x_center, width=TARGET_WIDTH)
+            clip = clip.cropped(x1=x_center, width=TARGET_WIDTH)
         else:
             new_width = TARGET_WIDTH
             new_height = int(clip.h * (TARGET_WIDTH / clip.w))
-            clip = clip.resize(width=new_width)
+            clip = clip.resized(width=new_width)
             y_center = (new_height - TARGET_HEIGHT) // 2
-            clip = clip.crop(y1=y_center, height=TARGET_HEIGHT)
+            clip = clip.cropped(y1=y_center, height=TARGET_HEIGHT)
 
         video_clips.append(clip)
         total_duration += clip.duration
@@ -73,6 +73,10 @@ for idx, gif_file in enumerate(gif_files):
 
 print(f"✓ Loaded {len(video_clips)} GIFs (total duration: {total_duration:.2f}s)")
 
+if len(video_clips) == 0:
+    print("❌ No GIFs loaded successfully!")
+    exit(1)
+
 if total_duration < audio_duration:
     loops_needed = int(np.ceil(audio_duration / total_duration))
     print(f"🔁 Looping GIF sequence {loops_needed} times to match song duration...\n")
@@ -83,8 +87,8 @@ else:
 print("🎞️ Combining clips and adding music...")
 full_sequence = concatenate_videoclips(video_clips, method="compose")
 
-final_video = full_sequence.subclip(0, audio_duration)
-final_video = final_video.set_audio(audio_clip)
+final_video = full_sequence.subclipped(0, audio_duration)
+final_video = final_video.with_audio(audio_clip)
 
 output_path = os.path.join(OUTPUT_DIR, f'{title.replace(" ", "_").lower()}_lofi_music_video.mp4')
 print(f"💾 Rendering final video (this may take a few minutes)...\n")
@@ -93,8 +97,7 @@ final_video.write_videofile(
     output_path, 
     fps=24, 
     codec='libx264', 
-    audio_codec='aac', 
-    verbose=False, 
+    audio_codec='aac',
     logger=None
 )
 
