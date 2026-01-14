@@ -72,7 +72,7 @@ jobs:
     - name: Fetch and process lyrics
       env:
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      run: python lyrics_module.py
+      run: python fetch_lyrics.py 
     
     - name: Generate AI song
       run: python generate_song.py
