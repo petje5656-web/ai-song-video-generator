@@ -33,7 +33,7 @@ audio_clip = AudioFileClip(wav_path)
 audio_duration = audio_clip.duration
 print(f"✓ Song duration: {audio_duration:.2f}s\n")
 
-TARGET_WIDTH = 1080
+TARGET_WIDTH = 2080
 TARGET_HEIGHT = 1920
 
 print(f"🎬 Loading GIFs at full length...\n")
