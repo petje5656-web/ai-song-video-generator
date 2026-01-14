@@ -1,6 +1,6 @@
 gradio_client>=0.8.0
 groq>=0.4.0
-lyricflow>=0.1.0
+git+https://github.com/MrViincciLeRoy/LyricFlow.git#egg=LyricFlow[dev]
 moviepy>=1.0.3
 soundfile>=0.12.0
 pydub>=0.25.1
