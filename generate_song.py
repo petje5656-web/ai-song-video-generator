@@ -52,13 +52,21 @@ except Exception as e:
     print(f"❌ Error generating song: {e}")
     sys.exit(1)
 
-audio_path, metadata = result
+if isinstance(result, (list, tuple)) and len(result) >= 2:
+    audio_path = result[0]
+    metadata = result[1] if isinstance(result[1], dict) else {}
+else:
+    audio_path = result if isinstance(result, str) else result[0]
+    metadata = {}
 
 print("=" * 60)
 print("✅ SONG GENERATED SUCCESSFULLY!")
 print("=" * 60)
 print(f"📁 Original file: {audio_path}")
-print(f"⏱️  Generation time: {metadata.get('inference_duration', 'N/A')}s")
+if metadata and 'inference_duration' in metadata:
+    print(f"⏱️  Generation time: {metadata['inference_duration']:.1f}s")
+else:
+    print(f"⏱️  Generation complete")
 
 output_filename = f"{title.replace(' ', '_').lower()}_ai_cover.flac"
 slowed_filename = f"{title.replace(' ', '_').lower()}_ai_cover_slowed.flac"
