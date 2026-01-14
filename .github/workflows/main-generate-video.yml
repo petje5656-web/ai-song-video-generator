@@ -52,11 +52,13 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y ffmpeg espeak-ng
+        sudo apt-get install -y ffmpeg espeak-ng imagemagick
     
     - name: Install Python dependencies
       run: |
-        pip install gradio_client groq moviepy soundfile pydub numpy Pillow
+        pip install --upgrade pip
+        pip install gradio_client groq soundfile pydub numpy Pillow
+        pip install moviepy==1.0.3
         pip install git+https://github.com/MrViincciLeRoy/LyricFlow.git#egg=LyricFlow[dev]
     
     - name: Update song configuration
