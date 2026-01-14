@@ -48,6 +48,7 @@ try:
         temperature=0.8,
         api_name="/generate_song"
     )
+    print(result) 
 except Exception as e:
     print(f"❌ Error generating song: {e}")
     sys.exit(1)
