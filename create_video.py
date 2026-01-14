@@ -3,8 +3,8 @@ import random
 import zipfile
 import soundfile as sf
 import numpy as np
-from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
-
+#from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
+from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips 
 ZIP_PATH = 'data/giphy.zip'
 EXTRACT_DIR = 'gifs_extracted'
 OUTPUT_DIR = 'outputs'
