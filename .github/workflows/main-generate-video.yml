@@ -25,6 +25,30 @@ jobs:
       with:
         python-version: '3.10'
     
+    - name: Cache GIF dataset
+      id: cache-gifs
+      uses: actions/cache@v3
+      with:
+        path: data/giphy.zip
+        key: giphy-dataset-v1
+    
+    - name: Download GIF dataset from Google Drive
+      if: steps.cache-gifs.outputs.cache-hit != 'true'
+      run: |
+        mkdir -p data
+        pip install gdown
+        gdown --id 1DxON0BqgvY8vX9s4twtmPWmmuVW51pE- -O data/giphy.zip
+        echo "✓ Downloaded GIF dataset"
+    
+    - name: Verify GIF dataset
+      run: |
+        if [ -f "data/giphy.zip" ]; then
+          echo "✓ GIF dataset found ($(du -h data/giphy.zip | cut -f1))"
+        else
+          echo "✗ GIF dataset missing!"
+          exit 1
+        fi
+    
     - name: Install system dependencies
       run: |
         sudo apt-get update
@@ -32,7 +56,8 @@ jobs:
     
     - name: Install Python dependencies
       run: |
-        pip install gradio_client groq lyricflow moviepy soundfile pydub
+        pip install gradio_client groq moviepy soundfile pydub numpy Pillow
+        pip install git+https://github.com/MrViincciLeRoy/LyricFlow.git#egg=LyricFlow[dev]
     
     - name: Update song configuration
       run: |
