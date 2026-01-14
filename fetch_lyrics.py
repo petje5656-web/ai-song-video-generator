@@ -40,65 +40,79 @@ class LyricFlowProcessor:
     
     def add_structure_tags(self, lyrics: str, title: str, artist: str) -> str:
         
-        prompt = f"""Analyze these lyrics and format them for AI music generation. Follow these EXACT rules:
+        prompt = f"""Format these lyrics for AI music generation. CRITICAL RULES:
 
-ALLOWED TAGS:
-- [verse] - Story/narrative sections (must contain lyrics)
-- [chorus] - Main hook/repeated section (must contain lyrics)
-- [bridge] - Musical departure (must contain lyrics)
-- [inst-short] - Short instrumental break (NO lyrics, 0-10 seconds)
-- [inst-medium] - Medium instrumental break (NO lyrics, 10-20 seconds)
-- [outro] - Ending section (can have lyrics or be instrumental)
+MUST START WITH: [verse] or [chorus] (NEVER [intro])
+ALLOWED STRUCTURE TAGS: [verse], [chorus], [bridge], [outro-short], [outro-medium], [outro-long]
+ALLOWED INSTRUMENTAL TAGS: [inst-short], [inst-medium], [inst-long]
 
-CRITICAL FORMATTING RULES:
-1. Use " ; " (space-semicolon-space) BEFORE instrumental tags when they follow lyrical sections
-2. Write lyrics on separate lines within each section
-3. NO numbers in tags (use [verse], NOT [verse 1])
-4. Repeat tags for multiple verses/choruses
-5. NO intro tags - start directly with [verse] or [chorus]
+FORMATTING RULES (STRICTLY FOLLOW):
+1. First line MUST be [verse] or [chorus]
+2. Lyrics go on separate lines AFTER the tag
+3. To add instrumental: end lyrics section with " ; " on new line, then instrumental tag on next line
+4. NO numbers in tags (use [verse] not [verse 1])
+5. Repeat [verse] or [chorus] for multiple sections
+6. End with [outro-short], [outro-medium], or [outro-long]
 
-STRUCTURE GUIDE:
-- Start with [verse] or [chorus]
-- Use [bridge] once for musical variation
-- Add " ; " before [inst-short] or [inst-medium] when they follow lyrics
-- End with [outro]
+VALID EXAMPLE:
+[verse]
+First line of verse
+Second line of verse
+ ; 
+[inst-short]
+[chorus]
+Chorus line one
+Chorus line two
+[verse]
+More verse lyrics here
+ ; 
+[inst-medium]
+[bridge]
+Bridge lyrics
+[chorus]
+Repeat chorus
+ ; 
+[outro-medium]
+
+INVALID (WRONG):
+[intro-short] ❌ NO INTRO TAGS EVER
+Some lyrics without tag ❌ MUST HAVE TAG FIRST
+[verse 1] ❌ NO NUMBERS
 
 Song: "{title}" by {artist}
 
 Lyrics:
 {lyrics}
 
-Example format:
-[verse]
-First line here
-Second line here
- ; 
-[inst-short]
-[chorus]
-Chorus line one
-Chorus line two
- ; 
-[inst-medium]
-[bridge]
-Bridge lyrics here
- ; 
-[outro]
-
-Output ONLY the formatted lyrics, no explanations."""
+Output ONLY formatted lyrics, no explanations. START WITH [verse] OR [chorus]."""
 
         try:
             response = self.client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
+                temperature=0.2,
                 max_tokens=4000
             )
             
-            return response.choices[0].message.content.strip()
+            formatted = response.choices[0].message.content.strip()
+            
+            # Validate output
+            lines = formatted.split('\n')
+            if not lines[0].strip().startswith('['):
+                formatted = '[verse]\n' + formatted
+            
+            # Remove any intro tags
+            formatted = re.sub(r'\[intro[-\w]*\]', '', formatted, flags=re.IGNORECASE)
+            
+            # Clean up extra blank lines
+            formatted = re.sub(r'\n{3,}', '\n\n', formatted)
+            
+            return formatted.strip()
             
         except Exception as e:
             print(f"Error with Groq API: {e}")
-            return lyrics
+            # Fallback: basic structure
+            return f"[verse]\n{lyrics}\n ; \n[outro-medium]"
     
     def process_lyrics_file(self, input_file: str, output_file: str, 
                            title: str, artist: str) -> str:
