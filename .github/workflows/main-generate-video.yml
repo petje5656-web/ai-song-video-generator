@@ -57,7 +57,8 @@ jobs:
     - name: Install Python dependencies
       run: |
         pip install --upgrade pip
-        pip install gradio_client groq soundfile pydub numpy Pillow
+        pip install gradio_client groq soundfile pydub numpy
+        pip install Pillow==9.5.0
         pip install moviepy==1.0.3
         pip install git+https://github.com/MrViincciLeRoy/LyricFlow.git#egg=LyricFlow[dev]
     
