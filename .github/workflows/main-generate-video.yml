@@ -1,0 +1,69 @@
+name: Generate Music Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      song_title:
+        description: 'Song Title'
+        required: true
+        default: 'Hey Jude'
+      artist:
+        description: 'Artist Name'
+        required: true
+        default: 'The Beatles'
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg espeak-ng
+    
+    - name: Install Python dependencies
+      run: |
+        pip install gradio_client groq lyricflow moviepy soundfile pydub
+    
+    - name: Update song configuration
+      run: |
+        sed -i 's/title = ".*"/title = "${{ github.event.inputs.song_title }}"/' fetch_lyrics.py
+        sed -i 's/artist = ".*"/artist = "${{ github.event.inputs.artist }}"/' fetch_lyrics.py
+        sed -i 's/title = ".*"/title = "${{ github.event.inputs.song_title }}"/' generate_song.py
+        sed -i 's/artist = ".*"/artist = "${{ github.event.inputs.artist }}"/' generate_song.py
+        sed -i 's/title = ".*"/title = "${{ github.event.inputs.song_title }}"/' create_video.py
+        sed -i 's/artist = ".*"/artist = "${{ github.event.inputs.artist }}"/' create_video.py
+    
+    - name: Fetch and process lyrics
+      env:
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      run: python fetch_lyrics.py
+    
+    - name: Generate AI song
+      run: python generate_song.py
+    
+    - name: Create music video
+      run: python create_video.py
+    
+    - name: Upload video artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: music-video
+        path: outputs/*.mp4
+    
+    - name: Upload audio artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: audio-files
+        path: |
+          *.flac
+          structured_lyrics.txt
