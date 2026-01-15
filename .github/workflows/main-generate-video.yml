@@ -57,13 +57,13 @@ jobs:
     - name: Install Python dependencies
       run: |
         pip install --upgrade pip
-        pip install gradio_client groq moviepy soundfile pydub numpy Pillow
+        pip install gradio_client groq moviepy soundfile pydub numpy
         pip install git+https://github.com/MrViincciLeRoy/LyricFlow.git#egg=LyricFlow[dev]
     
     - name: Update song configuration
       run: |
-        sed -i 's/title = ".*"/title = "${{ github.event.inputs.song_title }}"/' lyrics_module.py
-        sed -i 's/artist = ".*"/artist = "${{ github.event.inputs.artist }}"/' lyrics_module.py
+        sed -i 's/title = ".*"/title = "${{ github.event.inputs.song_title }}"/' fetch_lyrics.py
+        sed -i 's/artist = ".*"/artist = "${{ github.event.inputs.artist }}"/' fetch_lyrics.py
         sed -i 's/title = ".*"/title = "${{ github.event.inputs.song_title }}"/' generate_song.py
         sed -i 's/artist = ".*"/artist = "${{ github.event.inputs.artist }}"/' generate_song.py
         sed -i 's/title = ".*"/title = "${{ github.event.inputs.song_title }}"/' create_video.py
@@ -72,7 +72,7 @@ jobs:
     - name: Fetch and process lyrics
       env:
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      run: python fetch_lyrics.py 
+      run: python fetch_lyrics.py
     
     - name: Generate AI song
       run: python generate_song.py
