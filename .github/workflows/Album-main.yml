@@ -15,6 +15,8 @@ on:
         description: 'Max tracks per run (default: 2)'
         required: false
         default: '2'
+  repository_dispatch:
+    types: [continue-album]
 
 jobs:
   fetch-album:
@@ -182,17 +184,3 @@ jobs:
       with:
         name: full-album-video
         path: outputs/*_full_album.mp4
-
-on:
-  repository_dispatch:
-    types: [continue-album]
-
-jobs:
-  continue-generation:
-    if: github.event.action == 'continue-album'
-    uses: ./.github/workflows/album-generator.yml
-    with:
-      artist: ${{ github.event.client_payload.artist }}
-      album: ${{ github.event.client_payload.album }}
-      max_tracks_per_run: ${{ github.event.client_payload.max_tracks_per_run }}
-    secrets: inherit
