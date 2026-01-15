@@ -41,7 +41,7 @@ print("⏳ Generating song (this may take 2-5 minutes)...\n")
 try:
     result = client.predict(
         lyric=lyrics,
-        description=f"Female, dark, pop, piano, electric guitar and drums, the bpm is 90, Lofi, chill beats, mellow, dreamy, 1950s",
+        description=f"Female, dark, jazz, piano, guitar and drums, the bpm is 85, Lofi, chill beats, mellow, dreamy, 1950s",
         prompt_audio=None,
         genre="Auto",
         cfg_coef=1.5,
