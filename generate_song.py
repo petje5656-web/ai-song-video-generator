@@ -184,7 +184,7 @@ print("=" * 60)
 
 print("\n🔊 Attempting playback (may not work in CI environment)...")
 try:
-    play(final_audio[:30000])  # Play first 30 seconds
+    print("💪💪💪💪Done Crunching the video!") #play(final_audio[:30000])  # Play first 30 seconds
 except:
     print("⚠️  Playback not available in this environment (expected in CI)")
 
