@@ -85,9 +85,9 @@ jobs:
         
         git add .github/workflows/Album-main.yml
         git commit -m "🤖 Enable cron for album processing"
-        git push
+        git push https://x-access-token:${{ secrets.PAT_WORKFLOW }}@github.com/${{ github.repository }}.git
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        PAT_WORKFLOW: ${{ secrets.PAT_WORKFLOW }}
 
   generate-tracks:
     needs: fetch-album
@@ -252,9 +252,9 @@ jobs:
         
         git add .github/workflows/Album-main.yml
         git commit -m "🎉 Disable cron - album processing complete"
-        git push
+        git push https://x-access-token:${{ secrets.PAT_WORKFLOW }}@github.com/${{ github.repository }}.git
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        PAT_WORKFLOW: ${{ secrets.PAT_WORKFLOW }}
 
   merge-album:
     needs: generate-tracks
