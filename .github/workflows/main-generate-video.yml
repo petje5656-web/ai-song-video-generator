@@ -1,3 +1,4 @@
+# .github/workflows/main-generate-video.yml
 name: Generate Music Video
 
 on:
@@ -60,19 +61,15 @@ jobs:
         pip install gradio_client groq moviepy soundfile pydub numpy requests
         pip install git+https://github.com/MrViincciLeRoy/LyricFlow.git#egg=LyricFlow[dev]
     
-    - name: Update song configuration
+    - name: Set environment variables
       run: |
-        sed -i 's/title = ".*"/title = "${{ github.event.inputs.song_title }}"/' fetch_lyrics.py
-        sed -i 's/artist = ".*"/artist = "${{ github.event.inputs.artist }}"/' fetch_lyrics.py
-        sed -i 's/title = ".*"/title = "${{ github.event.inputs.song_title }}"/' generate_song.py
-        sed -i 's/artist = ".*"/artist = "${{ github.event.inputs.artist }}"/' generate_song.py
-        sed -i 's/title = ".*"/title = "${{ github.event.inputs.song_title }}"/' create_video.py
-        sed -i 's/artist = ".*"/artist = "${{ github.event.inputs.artist }}"/' create_video.py
+        echo "SONG_TITLE=${{ github.event.inputs.song_title }}" >> $GITHUB_ENV
+        echo "SONG_ARTIST=${{ github.event.inputs.artist }}" >> $GITHUB_ENV
     
     - name: Fetch and process lyrics
       env:
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      run: python fetch_lyrics.py
+      run: python fetch_lyrics.py "${{ github.event.inputs.song_title }}" "${{ github.event.inputs.artist }}"
     
     - name: Generate AI song
       run: python generate_song.py
@@ -93,3 +90,4 @@ jobs:
         path: |
           *.flac
           structured_lyrics.txt
+          lyrics_metadata.json
