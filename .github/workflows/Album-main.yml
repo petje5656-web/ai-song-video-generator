@@ -7,11 +7,11 @@ on:
       artist:
         description: 'Artist Name'
         required: true
-        default: 'J. Cole'
+        default: 'Taylor Swift'
       album:
         description: 'Album Name'
         required: true
-        default: 'Forest Hill Drive'
+        default: 'Midnights'
       max_tracks_per_run:
         description: 'Max tracks per run (default: 2)'
         required: false
@@ -56,11 +56,21 @@ jobs:
         # Run fetch script
         python fetch_album.py "$ARTIST" "$ALBUM"
         
-        # Construct filename (must match what fetch_album.py creates)
-        ALBUM_FILE="${ARTIST} - ${ALBUM}.json"
+        # Get the actual filename that was created (not the input)
+        ALBUM_FILE=$(ls -1 *.json | head -1)
+        
+        if [ -z "$ALBUM_FILE" ]; then
+          echo "❌ No JSON file created"
+          exit 1
+        fi
+        
+        # Extract actual artist and album name from the filename
+        ACTUAL_ARTIST=$(echo "$ALBUM_FILE" | sed 's/ - .*//')
+        ACTUAL_ALBUM=$(echo "$ALBUM_FILE" | sed 's/.*- //;s/.json$//')
+        
         echo "album_file=$ALBUM_FILE" >> $GITHUB_OUTPUT
-        echo "artist=$ARTIST" >> $GITHUB_OUTPUT
-        echo "album=$ALBUM" >> $GITHUB_OUTPUT
+        echo "artist=$ACTUAL_ARTIST" >> $GITHUB_OUTPUT
+        echo "album=$ACTUAL_ALBUM" >> $GITHUB_OUTPUT
         echo "Generated album file: $ALBUM_FILE"
     
     - name: Upload album data
@@ -84,23 +94,22 @@ jobs:
       id: vars
       run: |
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          # First run - use inputs
-          echo "artist=${{ github.event.inputs.artist }}" >> $GITHUB_OUTPUT
-          echo "album=${{ github.event.inputs.album }}" >> $GITHUB_OUTPUT
+          # First run - use outputs from fetch-album job
+          echo "artist=${{ needs.fetch-album.outputs.artist }}" >> $GITHUB_OUTPUT
+          echo "album=${{ needs.fetch-album.outputs.album }}" >> $GITHUB_OUTPUT
           echo "max_tracks=${{ github.event.inputs.max_tracks_per_run }}" >> $GITHUB_OUTPUT
           echo "album_file=${{ needs.fetch-album.outputs.album_file }}" >> $GITHUB_OUTPUT
         else
           # Continuation - use client_payload
-          echo "artist=${{ github.event.client_payload.artist }}" >> $GITHUB_OUTPUT
-          echo "album=${{ github.event.client_payload.album }}" >> $GITHUB_OUTPUT
-          echo "max_tracks=${{ github.event.client_payload.max_tracks_per_run }}" >> $GITHUB_OUTPUT
-          
-          # Construct album filename from payload
           ARTIST="${{ github.event.client_payload.artist }}"
           ALBUM="${{ github.event.client_payload.album }}"
-          ARTIST=$(echo "$ARTIST" | xargs)
-          ALBUM=$(echo "$ALBUM" | xargs)
+          
+          # Construct album filename from payload
           ALBUM_FILE="${ARTIST} - ${ALBUM}.json"
+          
+          echo "artist=$ARTIST" >> $GITHUB_OUTPUT
+          echo "album=$ALBUM" >> $GITHUB_OUTPUT
+          echo "max_tracks=${{ github.event.client_payload.max_tracks_per_run }}" >> $GITHUB_OUTPUT
           echo "album_file=$ALBUM_FILE" >> $GITHUB_OUTPUT
         fi
     
