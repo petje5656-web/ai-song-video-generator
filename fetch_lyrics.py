@@ -1,45 +1,75 @@
 import re
 import os
+import json
+import sys
 from pathlib import Path
 from typing import Optional, Dict
-from lyricflow.core.lyrics_provider import create_fetcher
+from lyricflow.core.lrclib_with_fallback import fetch_with_fallback
 from groq import Groq
 
-
 class LyricsModule:
-    def __init__(self, groq_api_key: str):
-        self.fetcher = create_fetcher("lrclib")
-        self.client = Groq(api_key=groq_api_key)
+    def __init__(self, api_keys: list):
+        self.api_keys = api_keys
+        self.current_key_index = 0
+        self.client = self._get_client()
     
-    def fetch_raw(self, title: str, artist: str) -> Optional[Dict]:
-        """Fetch lyrics from LRCLIB"""
+    def _get_client(self):
+        return Groq(api_key=self.api_keys[self.current_key_index])
+    
+    def _rotate_key(self):
+        self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
+        self.client = self._get_client()
+        print(f"🔄 Rotated to API key {self.current_key_index + 1}/{len(self.api_keys)}")
+    
+    def fetch_raw(self, title: str, artist: str, youtube_url: str = None) -> Optional[Dict]:
         try:
-            return self.fetcher.fetch(title, artist)
+            result = fetch_with_fallback(
+                title=title,
+                artist=artist,
+                audio_url=youtube_url,
+                strict_matching=True,
+                use_whisper=True if youtube_url else False
+            )
+            return result
         except Exception as e:
             print(f"Fetch error: {e}")
             return None
     
-    def clean_lyrics(self, synced_lyrics: str) -> str:
-        """Remove timestamps from LRC format"""
-        lines = synced_lyrics.split('\n')
+    def clean_lyrics(self, lyrics_text: str) -> str:
+        if not lyrics_text:
+            return ""
+        
+        lines = lyrics_text.split('\n')
         clean = []
         
         for line in lines:
+            line = line.strip()
+            
+            if not line:
+                continue
+            
             if line.startswith('[') and ']' in line:
-                if any(tag in line.lower() for tag in ['ti:', 'ar:', 'al:', 'length:', 'by:']):
+                if any(tag in line.lower() for tag in ['ti:', 'ar:', 'al:', 'length:', 'by:', 'offset:']):
                     continue
+                
                 match = re.search(r'\[[\d:.]+\](.*)', line)
                 if match:
                     text = match.group(1).strip()
                     if text:
                         clean.append(text)
-            elif line.strip():
-                clean.append(line.strip())
+                else:
+                    text = re.sub(r'\[.*?\]', '', line).strip()
+                    if text:
+                        clean.append(text)
+            else:
+                clean.append(line)
         
-        return '\n'.join(clean)
+        result = '\n'.join(clean)
+        result = re.sub(r'\n{3,}', '\n\n', result)
+        
+        return result.strip()
     
-    def add_structure(self, lyrics: str, title: str, artist: str) -> str:
-        """Add AI music generation tags"""
+    def add_structure(self, lyrics: str, title: str, artist: str, retry_count=0) -> str:
         prompt = f"""Format these lyrics for AI music generation. CRITICAL RULES:
 
 MUST START WITH: [verse] or [chorus] (NEVER [intro])
@@ -80,34 +110,37 @@ Output ONLY formatted lyrics."""
             return formatted.strip()
         except Exception as e:
             print(f"AI error: {e}")
+            
+            if retry_count < len(self.api_keys) - 1:
+                self._rotate_key()
+                return self.add_structure(lyrics, title, artist, retry_count + 1)
+            
             return f"[verse]\n{lyrics}\n ; \n[outro-medium]"
     
-    def save_lrc(self, result: Dict, filepath: str):
-        """Save LRC file"""
-        self.fetcher.save_lrc(result, Path(filepath))
-    
-    def get_lyrics(self, title: str, artist: str, structured: bool = True) -> Optional[Dict[str, str]]:
-        """
-        Get lyrics in multiple formats
-        
-        Returns:
-            Dict with 'raw', 'synced', 'clean', 'structured' lyrics
-        """
+    def get_lyrics(self, title: str, artist: str, youtube_url: str = None, structured: bool = True) -> Optional[Dict[str, str]]:
         print(f"🔍 Fetching '{title}' by {artist}...")
         
-        result = self.fetch_raw(title, artist)
-        if not result or not result.get('synced_lyrics'):
+        result = self.fetch_raw(title, artist, youtube_url)
+        if not result:
             print("❌ No lyrics found")
             return None
         
-        print("🧹 Cleaning timestamps...")
-        clean = self.clean_lyrics(result['synced_lyrics'])
+        lyrics_text = result.get('synced_lyrics') or result.get('plain_lyrics') or ""
+        
+        if not lyrics_text:
+            print("❌ No lyrics text available")
+            return None
+        
+        print("🧹 Cleaning lyrics...")
+        clean = self.clean_lyrics(lyrics_text)
         
         output = {
             'raw': result,
-            'synced': result['synced_lyrics'],
+            'synced': result.get('synced_lyrics'),
+            'plain': result.get('plain_lyrics'),
             'clean': clean,
-            'structured': None
+            'structured': None,
+            'provider': result.get('provider', 'unknown')
         }
         
         if structured:
@@ -116,31 +149,47 @@ Output ONLY formatted lyrics."""
         
         return output
 
-
 if __name__ == "__main__":
+    api_keys_str = os.getenv("GROQ_API_KEYS", "")
+    api_keys = [k.strip() for k in api_keys_str.split(',') if k.strip()]
     
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-    if not GROQ_API_KEY:
-        print("❌ GROQ_API_KEY not set")
-        exit(1)
+    if not api_keys:
+        api_key = os.getenv("GROQ_API_KEY")
+        if api_key:
+            api_keys = [api_key]
+        else:
+            print("❌ GROQ_API_KEYS or GROQ_API_KEY not set")
+            sys.exit(1)
     
-    module = LyricsModule(groq_api_key=GROQ_API_KEY)
+    print(f"✓ Loaded {len(api_keys)} API key(s)")
     
-    title = "Hey Jude"
-    artist = "The Beatles"
+    module = LyricsModule(api_keys=api_keys)
     
-    lyrics = module.get_lyrics(title=title, artist=artist, structured=True)
+    if len(sys.argv) >= 3:
+        title = sys.argv[1]
+        artist = sys.argv[2]
+        youtube_url = sys.argv[3] if len(sys.argv) > 3 else None
+    else:
+        with open('album_progress.json', 'r') as f:
+            progress = json.load(f)
+        
+        current_track = progress['current_track']
+        title = current_track['title']
+        artist = progress['artist']
+        youtube_url = current_track.get('youtube_url')
+    
+    lyrics = module.get_lyrics(title=title, artist=artist, youtube_url=youtube_url, structured=True)
     
     if lyrics:
         with open('structured_lyrics.txt', 'w') as f:
             f.write(lyrics['structured'])
         
         print("\n" + "="*60)
-        print("📝 STRUCTURED LYRICS (first 600 chars)")
+        print(f"📝 Provider: {lyrics['provider']}")
         print("="*60)
         print(lyrics['structured'][:600])
         print("="*60)
         print("\n✅ Saved to structured_lyrics.txt")
-        print("✅ Ready! Run generate_song.py next.")
     else:
         print("❌ Failed to fetch lyrics")
+        sys.exit(1)
