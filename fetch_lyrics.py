@@ -165,11 +165,13 @@ if __name__ == "__main__":
     
     module = LyricsModule(api_keys=api_keys)
     
+    # FIXED: Check if arguments are provided OR if album_progress.json exists
     if len(sys.argv) >= 3:
         title = sys.argv[1]
         artist = sys.argv[2]
         youtube_url = sys.argv[3] if len(sys.argv) > 3 else None
-    else:
+    elif os.path.exists('album_progress.json'):
+        # Album mode: read from progress file
         with open('album_progress.json', 'r') as f:
             progress = json.load(f)
         
@@ -177,12 +179,29 @@ if __name__ == "__main__":
         title = current_track['title']
         artist = progress['artist']
         youtube_url = current_track.get('youtube_url')
+    else:
+        # Single song mode: use defaults from the script
+        # Read from config file or environment
+        title = os.getenv('SONG_TITLE', 'Hey Jude')
+        artist = os.getenv('SONG_ARTIST', 'The Beatles')
+        youtube_url = None
+        print(f"ℹ️  Using defaults: '{title}' by {artist}")
     
     lyrics = module.get_lyrics(title=title, artist=artist, youtube_url=youtube_url, structured=True)
     
     if lyrics:
         with open('structured_lyrics.txt', 'w') as f:
             f.write(lyrics['structured'])
+        
+        # Save metadata for downstream scripts
+        metadata = {
+            'title': title,
+            'artist': artist,
+            'youtube_url': youtube_url,
+            'provider': lyrics['provider']
+        }
+        with open('lyrics_metadata.json', 'w') as f:
+            json.dump(metadata, f, indent=2)
         
         print("\n" + "="*60)
         print(f"📝 Provider: {lyrics['provider']}")

@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 from gradio_client import Client
 import shutil
 import soundfile as sf
@@ -22,8 +23,16 @@ if not lyrics.strip():
     print("❌ Error: structured_lyrics.txt is empty!")
     sys.exit(1)
 
-title = "Hey Jude"
-artist = "The Beatles"
+# FIXED: Read metadata from lyrics_metadata.json if available
+if os.path.exists('lyrics_metadata.json'):
+    with open('lyrics_metadata.json', 'r') as f:
+        metadata = json.load(f)
+        title = metadata.get('title', 'Hey Jude')
+        artist = metadata.get('artist', 'The Beatles')
+else:
+    # Fallback to environment variables or defaults
+    title = os.getenv('SONG_TITLE', 'Hey Jude')
+    artist = os.getenv('SONG_ARTIST', 'The Beatles')
 
 print(f"\n🎤 Song: '{title}' by {artist}")
 print("🎧 Style: Lofi pop, slowed reverb")
@@ -55,17 +64,17 @@ except Exception as e:
 
 if isinstance(result, (list, tuple)) and len(result) >= 2:
     audio_path = result[0]
-    metadata = result[1] if isinstance(result[1], dict) else {}
+    gen_metadata = result[1] if isinstance(result[1], dict) else {}
 else:
     audio_path = result if isinstance(result, str) else result[0]
-    metadata = {}
+    gen_metadata = {}
 
 print("=" * 60)
 print("✅ SONG GENERATED SUCCESSFULLY!")
 print("=" * 60)
 print(f"📁 Original file: {audio_path}")
-if metadata and 'inference_duration' in metadata:
-    print(f"⏱️  Generation time: {metadata['inference_duration']:.1f}s")
+if gen_metadata and 'inference_duration' in gen_metadata:
+    print(f"⏱️  Generation time: {gen_metadata['inference_duration']:.1f}s")
 else:
     print(f"⏱️  Generation complete")
 

@@ -1,4 +1,5 @@
 import os
+import json
 import random
 import zipfile
 import soundfile as sf
@@ -19,9 +20,23 @@ with zipfile.ZipFile(ZIP_PATH, 'r') as zip_ref:
 gif_files = [f for f in os.listdir(EXTRACT_DIR) if f.lower().endswith('.gif')]
 print(f"✓ Found {len(gif_files)} GIFs\n")
 
-title = "Hey Jude"
-artist = "The Beatles"
+# FIXED: Read metadata from lyrics_metadata.json if available
+if os.path.exists('lyrics_metadata.json'):
+    with open('lyrics_metadata.json', 'r') as f:
+        metadata = json.load(f)
+        title = metadata.get('title', 'Hey Jude')
+        artist = metadata.get('artist', 'The Beatles')
+else:
+    # Fallback to environment variables or defaults
+    title = os.getenv('SONG_TITLE', 'Hey Jude')
+    artist = os.getenv('SONG_ARTIST', 'The Beatles')
+
 song_filename = f"{title.replace(' ', '_').lower()}_ai_cover_slowed.flac"
+
+if not os.path.exists(song_filename):
+    print(f"❌ Error: Audio file '{song_filename}' not found!")
+    print("Run generate_song.py first to create the audio file.")
+    exit(1)
 
 print("🎵 Converting song to WAV...")
 audio_data, sample_rate = sf.read(song_filename)
@@ -111,8 +126,10 @@ full_sequence = concatenate_videoclips(video_clips, method="compose")
 final_video = full_sequence.subclipped(0, audio_duration)
 final_video = final_video.with_audio(audio_clip)
 
-output_path = os.path.join(OUTPUT_DIR, f'{title.replace(" ", "_").lower()}_lofi_music_video.mp4')
-print(f"💾 Rendering final video...\n")
+# FIXED: Use consistent filename format that album_pipeline.py expects
+output_filename = f'{title.replace(" ", "_").lower()}_lofi_music_video.mp4'
+output_path = os.path.join(OUTPUT_DIR, output_filename)
+print(f"💾 Rendering final video to: {output_path}\n")
 
 final_video.write_videofile(
     output_path, 
@@ -122,10 +139,18 @@ final_video.write_videofile(
     logger=None
 )
 
+# FIXED: Verify file was created
+if not os.path.exists(output_path):
+    print(f"❌ ERROR: Video file was not created at {output_path}")
+    exit(1)
+
+file_size = os.path.getsize(output_path) / (1024 * 1024)  # MB
+
 print("=" * 60)
 print("✅ MUSIC VIDEO CREATED!")
 print("=" * 60)
 print(f"📁 Output: {output_path}")
+print(f"📦 Size: {file_size:.2f} MB")
 print(f"🎵 Song: '{title}' by {artist} (Lofi 0.8x)")
 print(f"⏱️  Duration: {audio_duration:.2f}s")
 print(f"🎬 GIFs used: {len(video_clips)}")
