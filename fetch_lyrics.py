@@ -147,7 +147,9 @@ VERSE SPLITTING RULE:
   * Add " ; " on new line
   * Add [inst-medium] after bridge
 - IF we have say >2 chorus following each other:
-  *  Add [inst-long] in odd numbers 1,3 etc
+  * Add " ; " on new line
+  *  Add [inst-long] after odd numbers 1,3 etc
+  * Add next chorus on new line
   
   
 
