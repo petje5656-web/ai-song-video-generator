@@ -81,7 +81,7 @@ else:
     print(f"⏱️  Generation complete")
 
 output_filename = f"{title.replace(' ', '_').lower()}_ai_cover.flac"
-lofi_filename = f"{title.replace(' ', '_').lower()}_ai_cover_lofi.flac"
+lofi_filename = f"{title.replace(' ', '_').lower()}_ai_cover_slowed.flac"
 
 print("\n🎛️  Applying lofi effects...")
 print("   ├─ Slowing to 0.8x speed")
