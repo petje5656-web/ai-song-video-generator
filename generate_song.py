@@ -87,29 +87,35 @@ choir_filename = f"{title.replace(' ', '_').lower()}_ai_cover_slowed.flac"
 
 print("\n🎛️  Applying choir enhancements...")
 print("   ├─ Slowing to 0.8x speed")
-print("   ├─ Adding cathedral reverb")
+print("   ├─ Adding smooth cathedral reverb")
 print("   ├─ Lowering pitch (-2 semitones)")
-print("   ├─ Enhancing harmonics")
-print("   └─ Applying warmth filter\n")
+print("   ├─ Applying warmth filter")
+print("   ├─ Dynamic compression")
+print("   └─ Smooth crossfading\n")
 
 try:
     audio = AudioSegment.from_file(audio_path)
     
+    # 1. SLOW DOWN TO 0.8x (smooth tempo reduction)
     slowed_audio = audio._spawn(audio.raw_data, overrides={
         "frame_rate": int(audio.frame_rate * 0.8)
     })
     slowed_audio = slowed_audio.set_frame_rate(audio.frame_rate)
     
+    # 2. PITCH SHIFT DOWN (-2 semitones for choir warmth)
     pitched_audio = slowed_audio._spawn(slowed_audio.raw_data, overrides={
         "frame_rate": int(slowed_audio.frame_rate * 0.887)
     })
     pitched_audio = pitched_audio.set_frame_rate(slowed_audio.frame_rate)
     
+    # 3. LOW-PASS FILTER (warmth without harshness)
     samples = np.array(pitched_audio.get_array_of_samples())
     
     nyquist = pitched_audio.frame_rate / 2
     cutoff = 5000
     normalized_cutoff = cutoff / nyquist
+    
+    # Use butterworth filter for smooth frequency response
     b, a = signal.butter(4, normalized_cutoff, btype='low')
     filtered_samples = signal.filtfilt(b, a, samples)
     
@@ -154,10 +160,11 @@ print(f"🎵 Duration: {len(final_audio) / 1000:.2f}s")
 print("\n🎛️  Effects applied:")
 print("   ✓ 0.8x speed (slowed)")
 print("   ✓ -2 semitones pitch")
-print("   ✓ Cathedral reverb")
-print("   ✓ Enhanced harmonics")
+print("   ✓ Smooth cathedral reverb (4 layers)")
 print("   ✓ Warmth filter (5kHz)")
-print("   ✓ Compression & normalization")
+print("   ✓ Dynamic compression (smooth)")
+print("   ✓ Crossfade smoothing")
+print("   ✓ NO vinyl crackle (removed)")
 print("=" * 60)
 
 print("\n✅ Files saved! Run create_video.py next to make the music video.")
