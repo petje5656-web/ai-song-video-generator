@@ -1,0 +1,198 @@
+name: Generate Album Videos
+
+on:
+  workflow_dispatch:
+    inputs:
+      artist:
+        description: 'Artist Name'
+        required: true
+        default: 'Taylor Swift'
+      album:
+        description: 'Album Name'
+        required: true
+        default: 'Midnights'
+      max_tracks_per_run:
+        description: 'Max tracks per run (default: 2)'
+        required: false
+        default: '2'
+
+jobs:
+  fetch-album:
+    runs-on: ubuntu-latest
+    outputs:
+      album_file: ${{ steps.fetch.outputs.album_file }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        pip install yt-dlp musicbrainzngs
+    
+    - name: Fetch album data
+      id: fetch
+      run: |
+        python fetch_album.py "${{ github.event.inputs.artist }}" "${{ github.event.inputs.album }}"
+        ALBUM_FILE="${{ github.event.inputs.artist }} - ${{ github.event.inputs.album }}.json"
+        echo "album_file=$ALBUM_FILE" >> $GITHUB_OUTPUT
+    
+    - name: Upload album data
+      uses: actions/upload-artifact@v4
+      with:
+        name: album-data
+        path: "*.json"
+
+  generate-tracks:
+    needs: fetch-album
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Download album data
+      uses: actions/download-artifact@v4
+      with:
+        name: album-data
+    
+    - name: Download progress (if exists)
+      continue-on-error: true
+      run: |
+        gh release download progress-data -p album_progress.json || echo "No previous progress"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Cache GIF dataset
+      id: cache-gifs
+      uses: actions/cache@v4
+      with:
+        path: data/giphy.zip
+        key: giphy-dataset-v1
+    
+    - name: Download GIF dataset
+      if: steps.cache-gifs.outputs.cache-hit != 'true'
+      run: |
+        mkdir -p data
+        pip install gdown
+        gdown --id 1DxON0BqgvY8vX9s4twtmPWmmuVW51pE- -O data/giphy.zip
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg espeak-ng imagemagick
+    
+    - name: Install Python dependencies
+      run: |
+        pip install --upgrade pip
+        pip install gradio_client groq moviepy soundfile pydub numpy requests
+        pip install git+https://github.com/MrViincciLeRoy/LyricFlow.git#egg=LyricFlow[dev]
+    
+    - name: Run album pipeline
+      id: pipeline
+      env:
+        GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      run: |
+        python album_pipeline.py "${{ needs.fetch-album.outputs.album_file }}" ${{ github.event.inputs.max_tracks_per_run }}
+        echo "status=$?" >> $GITHUB_OUTPUT
+    
+    - name: Upload progress tracking
+      uses: actions/upload-artifact@v4
+      with:
+        name: album-progress
+        path: album_progress.json
+    
+    - name: Upload completed videos
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: track-videos
+        path: outputs/*.mp4
+    
+    - name: Save progress to release
+      if: always()
+      run: |
+        gh release create progress-data album_progress.json --title "Album Progress" || \
+        gh release upload progress-data album_progress.json --clobber
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Check if more tracks needed
+      id: check_continue
+      run: |
+        STATUS=$(python -c "import json; p=json.load(open('album_progress.json')); print(p['status'])")
+        echo "album_status=$STATUS" >> $GITHUB_OUTPUT
+    
+    - name: Wait 10 minutes before next batch
+      if: steps.check_continue.outputs.album_status == 'paused'
+      run: |
+        echo "⏸️  Pausing for 10 minutes..."
+        sleep 600
+    
+    - name: Trigger next batch
+      if: steps.check_continue.outputs.album_status == 'paused'
+      uses: peter-evans/repository-dispatch@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        event-type: continue-album
+        client-payload: '{"artist": "${{ github.event.inputs.artist }}", "album": "${{ github.event.inputs.album }}", "max_tracks_per_run": "${{ github.event.inputs.max_tracks_per_run }}"}'
+
+  merge-album:
+    needs: generate-tracks
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: '*'
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+        pip install moviepy
+    
+    - name: Merge videos
+      run: |
+        python merge_videos.py
+    
+    - name: Upload full album video
+      uses: actions/upload-artifact@v4
+      with:
+        name: full-album-video
+        path: outputs/*_full_album.mp4
+
+on:
+  repository_dispatch:
+    types: [continue-album]
+
+jobs:
+  continue-generation:
+    if: github.event.action == 'continue-album'
+    uses: ./.github/workflows/album-generator.yml
+    with:
+      artist: ${{ github.event.client_payload.artist }}
+      album: ${{ github.event.client_payload.album }}
+      max_tracks_per_run: ${{ github.event.client_payload.max_tracks_per_run }}
+    secrets: inherit
