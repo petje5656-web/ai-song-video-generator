@@ -146,6 +146,10 @@ VERSE SPLITTING RULE:
   * Continue rest as [bridge]
   * Add " ; " on new line
   * Add [inst-medium] after bridge
+- IF we have say >2 chorus following each other:
+  *  Add [inst-long] in odd numbers 1,3 etc
+  
+  
 
 FORMATTING:
 1. Lyrics on separate lines AFTER the tag
