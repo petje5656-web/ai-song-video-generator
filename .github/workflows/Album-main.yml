@@ -16,14 +16,14 @@ on:
         description: 'Max tracks per run (default: 2)'
         required: false
         default: '2'
-  repository_dispatch:
-    types: [continue-album]
+  # CRON_PLACEHOLDER - This line gets replaced by the workflow
 
 jobs:
   fetch-album:
     runs-on: ubuntu-latest
-    # Only run fetch-album on workflow_dispatch, not on continue-album
     if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
     outputs:
       album_file: ${{ steps.fetch.outputs.album_file }}
       artist: ${{ steps.fetch.outputs.artist }}
@@ -45,18 +45,14 @@ jobs:
     - name: Fetch album data
       id: fetch
       run: |
-        # Store inputs in variables to avoid trailing space issues
         ARTIST="${{ github.event.inputs.artist }}"
         ALBUM="${{ github.event.inputs.album }}"
         
-        # Trim whitespace
         ARTIST=$(echo "$ARTIST" | xargs)
         ALBUM=$(echo "$ALBUM" | xargs)
         
-        # Run fetch script
         python fetch_album.py "$ARTIST" "$ALBUM"
         
-        # Get the actual filename that was created (not the input)
         ALBUM_FILE=$(ls -1 *.json | head -1)
         
         if [ -z "$ALBUM_FILE" ]; then
@@ -64,7 +60,6 @@ jobs:
           exit 1
         fi
         
-        # Extract actual artist and album name from the filename
         ACTUAL_ARTIST=$(echo "$ALBUM_FILE" | sed 's/ - .*//')
         ACTUAL_ALBUM=$(echo "$ALBUM_FILE" | sed 's/.*- //;s/.json$//')
         
@@ -78,6 +73,21 @@ jobs:
       with:
         name: album-data
         path: "*.json"
+    
+    - name: Enable cron trigger
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # Replace CRON_PLACEHOLDER with actual cron schedule
+        sed -i 's/# CRON_PLACEHOLDER - This line gets replaced by the workflow/schedule:\n    - cron: '\''*\/10 * * * *'\''  # Every 10 minutes/' .github/workflows/Album-main.yml
+        
+        git add .github/workflows/Album-main.yml
+        git commit -m "🤖 Enable cron for album processing"
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   generate-tracks:
     needs: fetch-album
@@ -94,50 +104,32 @@ jobs:
       id: vars
       run: |
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          # First run - use outputs from fetch-album job
           echo "artist=${{ needs.fetch-album.outputs.artist }}" >> $GITHUB_OUTPUT
           echo "album=${{ needs.fetch-album.outputs.album }}" >> $GITHUB_OUTPUT
           echo "max_tracks=${{ github.event.inputs.max_tracks_per_run }}" >> $GITHUB_OUTPUT
           echo "album_file=${{ needs.fetch-album.outputs.album_file }}" >> $GITHUB_OUTPUT
-        else
-          # Continuation - use client_payload
-          ARTIST="${{ github.event.client_payload.artist }}"
-          ALBUM="${{ github.event.client_payload.album }}"
-          
-          # Construct album filename from payload
-          ALBUM_FILE="${ARTIST} - ${ALBUM}.json"
-          
-          echo "artist=$ARTIST" >> $GITHUB_OUTPUT
-          echo "album=$ALBUM" >> $GITHUB_OUTPUT
-          echo "max_tracks=${{ github.event.client_payload.max_tracks_per_run }}" >> $GITHUB_OUTPUT
-          echo "album_file=$ALBUM_FILE" >> $GITHUB_OUTPUT
+        elif [ "${{ github.event_name }}" = "schedule" ]; then
+          # Load from progress file
+          if [ -f album_progress.json ]; then
+            ARTIST=$(python3 -c "import json; print(json.load(open('album_progress.json'))['artist'])")
+            ALBUM=$(python3 -c "import json; print(json.load(open('album_progress.json'))['album'])")
+            ALBUM_FILE="${ARTIST} - ${ALBUM}.json"
+            
+            echo "artist=$ARTIST" >> $GITHUB_OUTPUT
+            echo "album=$ALBUM" >> $GITHUB_OUTPUT
+            echo "max_tracks=2" >> $GITHUB_OUTPUT
+            echo "album_file=$ALBUM_FILE" >> $GITHUB_OUTPUT
+          else
+            echo "❌ No progress file found for scheduled run"
+            exit 1
+          fi
         fi
     
-    - name: Download album data
-      uses: actions/download-artifact@v4
-      with:
-        name: album-data
-      continue-on-error: true
-    
-    - name: Download from previous run if not found
-      if: github.event_name == 'repository_dispatch'
+    - name: Download album data from release
       run: |
-        # Try to get album data from previous workflow run
-        ALBUM_FILE="${{ steps.vars.outputs.album_file }}"
-        
-        if [ ! -f "$ALBUM_FILE" ]; then
-          echo "Album file not in artifacts, trying to download from latest release..."
-          gh release download album-data -p "*.json" || echo "No release found"
-        fi
+        gh release download album-data -p "*.json" || echo "No album data release"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Verify downloaded files
-      run: |
-        echo "Files in current directory:"
-        ls -la *.json || echo "No JSON files found"
-        echo ""
-        echo "Looking for: ${{ steps.vars.outputs.album_file }}"
     
     - name: Download progress (if exists)
       continue-on-error: true
@@ -198,7 +190,7 @@ jobs:
         echo "status=$?" >> $GITHUB_OUTPUT
     
     - name: Upload album data for next run
-      if: always() && github.event_name == 'workflow_dispatch'
+      if: always()
       run: |
         ALBUM_FILE="${{ steps.vars.outputs.album_file }}"
         gh release create album-data "$ALBUM_FILE" --title "Album Data" || \
@@ -232,29 +224,37 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: Check if more tracks needed
-      id: check_continue
+    - name: Check if album complete
+      id: check_complete
       run: |
         if [ -f album_progress.json ]; then
           STATUS=$(python -c "import json; p=json.load(open('album_progress.json')); print(p['status'])")
           echo "album_status=$STATUS" >> $GITHUB_OUTPUT
+          
+          if [ "$STATUS" = "completed" ]; then
+            echo "✅ Album complete! Disabling cron..."
+          else
+            echo "⏸️ More tracks remaining..."
+          fi
         else
           echo "album_status=failed" >> $GITHUB_OUTPUT
         fi
     
-    - name: Wait 10 minutes before next batch
-      if: steps.check_continue.outputs.album_status == 'paused'
+    - name: Disable cron when complete
+      if: steps.check_complete.outputs.album_status == 'completed'
       run: |
-        echo "⏸️  Pausing for 10 minutes..."
-        sleep 600
-    
-    - name: Trigger next batch
-      if: steps.check_continue.outputs.album_status == 'paused'
-      uses: peter-evans/repository-dispatch@v3
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        event-type: continue-album
-        client-payload: '{"artist": "${{ steps.vars.outputs.artist }}", "album": "${{ steps.vars.outputs.album }}", "max_tracks_per_run": "${{ steps.vars.outputs.max_tracks }}"}'
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # Replace cron schedule with placeholder
+        sed -i '/schedule:/,/cron:/d' .github/workflows/Album-main.yml
+        sed -i 's/on:/on:\n  # CRON_PLACEHOLDER - This line gets replaced by the workflow/' .github/workflows/Album-main.yml
+        
+        git add .github/workflows/Album-main.yml
+        git commit -m "🎉 Disable cron - album processing complete"
+        git push
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   merge-album:
     needs: generate-tracks
@@ -265,32 +265,53 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
     
-    - name: Download artifacts
+    - name: Download progress
+      run: |
+        gh release download progress-data -p album_progress.json || echo "No progress"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Check if ready to merge
+      id: check_merge
+      run: |
+        if [ -f album_progress.json ]; then
+          STATUS=$(python -c "import json; p=json.load(open('album_progress.json')); print(p['status'])")
+          if [ "$STATUS" = "completed" ]; then
+            echo "ready=true" >> $GITHUB_OUTPUT
+          else
+            echo "ready=false" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "ready=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Download all track artifacts
+      if: steps.check_merge.outputs.ready == 'true'
       uses: actions/download-artifact@v4
       with:
-        pattern: '*'
+        pattern: 'track-videos-*'
+        path: outputs
     
     - name: Set up Python
+      if: steps.check_merge.outputs.ready == 'true'
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
     
     - name: Install dependencies
+      if: steps.check_merge.outputs.ready == 'true'
       run: |
         sudo apt-get update
         sudo apt-get install -y ffmpeg
         pip install moviepy
     
     - name: Merge videos
+      if: steps.check_merge.outputs.ready == 'true'
       run: |
-        if [ -f album_progress.json ]; then
-          python merge_videos.py
-        else
-          echo "⚠️ No progress file found, skipping merge"
-        fi
+        python merge_videos.py
     
     - name: Upload full album video
-      if: always()
+      if: steps.check_merge.outputs.ready == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: full-album-video
