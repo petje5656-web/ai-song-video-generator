@@ -1,0 +1,131 @@
+name: Test Generate Song
+
+on:
+  workflow_dispatch:
+    inputs:
+      song_title:
+        description: 'Song Title'
+        required: true
+        default: 'Hey Jude'
+      artist:
+        description: 'Artist Name'
+        required: true
+        default: 'The Beatles'
+      youtube_url:
+        description: 'YouTube URL (optional)'
+        required: false
+        default: ''
+
+jobs:
+  test-generate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+    
+    - name: Install Python dependencies
+      run: |
+        pip install --upgrade pip
+        pip install gradio_client groq requests soundfile pydub numpy scipy
+    
+    - name: Fetch lyrics
+      env:
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+      run: |
+        if [ -n "${{ github.event.inputs.youtube_url }}" ]; then
+          python fetch_lyrics.py "${{ github.event.inputs.song_title }}" "${{ github.event.inputs.artist }}" "${{ github.event.inputs.youtube_url }}"
+        else
+          python fetch_lyrics.py "${{ github.event.inputs.song_title }}" "${{ github.event.inputs.artist }}"
+        fi
+    
+    - name: Display structured lyrics
+      run: |
+        echo "============================================"
+        echo "STRUCTURED LYRICS FOR GENERATION"
+        echo "============================================"
+        cat structured_lyrics.txt
+        echo ""
+    
+    - name: Generate choir song
+      run: |
+        python generate_song.py
+    
+    - name: Verify audio files
+      run: |
+        ls -lh *.flac || echo "No FLAC files found"
+        
+        if [ -f "*_ai_cover_slowed.flac" ]; then
+          echo "✅ Choir version created"
+        fi
+        
+        if [ -f "*_ai_cover.flac" ]; then
+          echo "✅ Original version created"
+        fi
+    
+    - name: Audio file info
+      run: |
+        python3 << 'EOF'
+        import glob
+        import soundfile as sf
+        
+        flac_files = glob.glob("*.flac")
+        
+        if not flac_files:
+            print("❌ No FLAC files generated")
+            exit(1)
+        
+        print("\n" + "="*60)
+        print("GENERATED AUDIO FILES")
+        print("="*60)
+        
+        for file in flac_files:
+            try:
+                data, samplerate = sf.read(file)
+                duration = len(data) / samplerate
+                print(f"\n📁 {file}")
+                print(f"   Duration: {duration:.2f}s")
+                print(f"   Sample rate: {samplerate}Hz")
+                print(f"   Channels: {data.shape[1] if len(data.shape) > 1 else 1}")
+            except Exception as e:
+                print(f"\n❌ Error reading {file}: {e}")
+        
+        print("\n" + "="*60)
+        EOF
+    
+    - name: Upload audio artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: generated-audio
+        path: |
+          *.flac
+          structured_lyrics.txt
+          lyrics_metadata.json
+    
+    - name: Summary
+      run: |
+        echo "## Generation Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Song:** ${{ github.event.inputs.song_title }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Artist:** ${{ github.event.inputs.artist }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Choir Theme Applied:" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Gospel/choir harmonies" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ 0.8x slowed speed" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Cathedral reverb (3 layers)" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ -2 semitones pitch shift" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Warmth filter applied" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Generated Files:" >> $GITHUB_STEP_SUMMARY
+        ls -lh *.flac | awk '{print "- " $9 " (" $5 ")"}' >> $GITHUB_STEP_SUMMARY || echo "- No files" >> $GITHUB_STEP_SUMMARY

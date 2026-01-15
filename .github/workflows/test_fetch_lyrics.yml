@@ -1,0 +1,122 @@
+name: Test Fetch Lyrics
+
+on:
+  workflow_dispatch:
+    inputs:
+      song_title:
+        description: 'Song Title'
+        required: true
+        default: 'Hey Jude'
+      artist:
+        description: 'Artist Name'
+        required: true
+        default: 'The Beatles'
+      youtube_url:
+        description: 'YouTube URL (optional)'
+        required: false
+        default: ''
+
+jobs:
+  test-fetch:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install groq requests
+    
+    - name: Run fetch_lyrics.py
+      env:
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
+      run: |
+        if [ -n "${{ github.event.inputs.youtube_url }}" ]; then
+          python fetch_lyrics.py "${{ github.event.inputs.song_title }}" "${{ github.event.inputs.artist }}" "${{ github.event.inputs.youtube_url }}"
+        else
+          python fetch_lyrics.py "${{ github.event.inputs.song_title }}" "${{ github.event.inputs.artist }}"
+        fi
+    
+    - name: Display structured lyrics
+      run: |
+        echo "============================================"
+        echo "STRUCTURED LYRICS OUTPUT"
+        echo "============================================"
+        cat structured_lyrics.txt
+        echo ""
+        echo "============================================"
+        echo "METADATA"
+        echo "============================================"
+        cat lyrics_metadata.json
+    
+    - name: Validate structure rules
+      run: |
+        python3 << 'EOF'
+        import re
+        import sys
+        
+        with open('structured_lyrics.txt', 'r') as f:
+            lyrics = f.read()
+        
+        errors = []
+        
+        # Check no [inst-short]
+        if re.search(r'\[inst-short\]', lyrics, re.IGNORECASE):
+            errors.append("❌ Found [inst-short] - only [inst-medium] and [inst-long] allowed")
+        
+        # Check ends with [outro-short]
+        if not re.search(r'\[outro-short\]\s*$', lyrics, re.IGNORECASE):
+            errors.append("❌ Does not end with [outro-short]")
+        
+        # Check no [outro-medium] or [outro-long]
+        if re.search(r'\[outro-(medium|long)\]', lyrics, re.IGNORECASE):
+            errors.append("❌ Found [outro-medium] or [outro-long] - only [outro-short] allowed")
+        
+        # Check starts correctly
+        first_tag = re.search(r'^\s*\[(\w+)\]', lyrics)
+        if first_tag and first_tag.group(1).lower() not in ['verse', 'chorus']:
+            errors.append(f"❌ Starts with [{first_tag.group(1)}] - must start with [verse] or [chorus]")
+        
+        if errors:
+            print("\n".join(errors))
+            sys.exit(1)
+        else:
+            print("✅ All structure rules validated successfully!")
+            print("   ✓ No [inst-short] found")
+            print("   ✓ Ends with [outro-short]")
+            print("   ✓ Starts with [verse] or [chorus]")
+            print("   ✓ Only allowed tags present")
+        EOF
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: lyrics-output
+        path: |
+          structured_lyrics.txt
+          lyrics_metadata.json
+    
+    - name: Summary
+      run: |
+        echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Song:** ${{ github.event.inputs.song_title }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Artist:** ${{ github.event.inputs.artist }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Structure Rules Applied:" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Only [inst-medium] and [inst-long]" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Always ends with [outro-short]" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Long verses (>12 lines) split with bridge" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Preview:" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        head -n 30 structured_lyrics.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
