@@ -7,11 +7,11 @@ on:
       artist:
         description: 'Artist Name'
         required: true
-        default: 'Taylor Swift'
+        default: 'J. Cole'
       album:
         description: 'Album Name'
         required: true
-        default: 'Midnights'
+        default: 'Forest Hill Drive'
       max_tracks_per_run:
         description: 'Max tracks per run (default: 2)'
         required: false
@@ -22,8 +22,12 @@ on:
 jobs:
   fetch-album:
     runs-on: ubuntu-latest
+    # Only run fetch-album on workflow_dispatch, not on continue-album
+    if: github.event_name == 'workflow_dispatch'
     outputs:
       album_file: ${{ steps.fetch.outputs.album_file }}
+      artist: ${{ steps.fetch.outputs.artist }}
+      album: ${{ steps.fetch.outputs.album }}
     
     steps:
     - name: Checkout repository
@@ -45,12 +49,18 @@ jobs:
         ARTIST="${{ github.event.inputs.artist }}"
         ALBUM="${{ github.event.inputs.album }}"
         
+        # Trim whitespace
+        ARTIST=$(echo "$ARTIST" | xargs)
+        ALBUM=$(echo "$ALBUM" | xargs)
+        
         # Run fetch script
         python fetch_album.py "$ARTIST" "$ALBUM"
         
         # Construct filename (must match what fetch_album.py creates)
         ALBUM_FILE="${ARTIST} - ${ALBUM}.json"
         echo "album_file=$ALBUM_FILE" >> $GITHUB_OUTPUT
+        echo "artist=$ARTIST" >> $GITHUB_OUTPUT
+        echo "album=$ALBUM" >> $GITHUB_OUTPUT
         echo "Generated album file: $ALBUM_FILE"
     
     - name: Upload album data
@@ -62,6 +72,7 @@ jobs:
   generate-tracks:
     needs: fetch-album
     runs-on: ubuntu-latest
+    if: always()
     permissions:
       contents: write
     
@@ -69,15 +80,55 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
     
+    - name: Set workflow variables
+      id: vars
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # First run - use inputs
+          echo "artist=${{ github.event.inputs.artist }}" >> $GITHUB_OUTPUT
+          echo "album=${{ github.event.inputs.album }}" >> $GITHUB_OUTPUT
+          echo "max_tracks=${{ github.event.inputs.max_tracks_per_run }}" >> $GITHUB_OUTPUT
+          echo "album_file=${{ needs.fetch-album.outputs.album_file }}" >> $GITHUB_OUTPUT
+        else
+          # Continuation - use client_payload
+          echo "artist=${{ github.event.client_payload.artist }}" >> $GITHUB_OUTPUT
+          echo "album=${{ github.event.client_payload.album }}" >> $GITHUB_OUTPUT
+          echo "max_tracks=${{ github.event.client_payload.max_tracks_per_run }}" >> $GITHUB_OUTPUT
+          
+          # Construct album filename from payload
+          ARTIST="${{ github.event.client_payload.artist }}"
+          ALBUM="${{ github.event.client_payload.album }}"
+          ARTIST=$(echo "$ARTIST" | xargs)
+          ALBUM=$(echo "$ALBUM" | xargs)
+          ALBUM_FILE="${ARTIST} - ${ALBUM}.json"
+          echo "album_file=$ALBUM_FILE" >> $GITHUB_OUTPUT
+        fi
+    
     - name: Download album data
       uses: actions/download-artifact@v4
       with:
         name: album-data
+      continue-on-error: true
+    
+    - name: Download from previous run if not found
+      if: github.event_name == 'repository_dispatch'
+      run: |
+        # Try to get album data from previous workflow run
+        ALBUM_FILE="${{ steps.vars.outputs.album_file }}"
+        
+        if [ ! -f "$ALBUM_FILE" ]; then
+          echo "Album file not in artifacts, trying to download from latest release..."
+          gh release download album-data -p "*.json" || echo "No release found"
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Verify downloaded files
       run: |
         echo "Files in current directory:"
         ls -la *.json || echo "No JSON files found"
+        echo ""
+        echo "Looking for: ${{ steps.vars.outputs.album_file }}"
     
     - name: Download progress (if exists)
       continue-on-error: true
@@ -122,9 +173,29 @@ jobs:
         GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }}
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       run: |
-        echo "Looking for album file: ${{ needs.fetch-album.outputs.album_file }}"
-        python album_pipeline.py "${{ needs.fetch-album.outputs.album_file }}" ${{ github.event.inputs.max_tracks_per_run }}
+        ALBUM_FILE="${{ steps.vars.outputs.album_file }}"
+        MAX_TRACKS="${{ steps.vars.outputs.max_tracks }}"
+        
+        echo "Looking for album file: $ALBUM_FILE"
+        
+        if [ ! -f "$ALBUM_FILE" ]; then
+          echo "❌ Album file not found: $ALBUM_FILE"
+          echo "Available files:"
+          ls -la
+          exit 1
+        fi
+        
+        python album_pipeline.py "$ALBUM_FILE" "$MAX_TRACKS"
         echo "status=$?" >> $GITHUB_OUTPUT
+    
+    - name: Upload album data for next run
+      if: always() && github.event_name == 'workflow_dispatch'
+      run: |
+        ALBUM_FILE="${{ steps.vars.outputs.album_file }}"
+        gh release create album-data "$ALBUM_FILE" --title "Album Data" || \
+        gh release upload album-data "$ALBUM_FILE" --clobber
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Upload progress tracking
       if: always()
@@ -174,7 +245,7 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         event-type: continue-album
-        client-payload: '{"artist": "${{ github.event.inputs.artist }}", "album": "${{ github.event.inputs.album }}", "max_tracks_per_run": "${{ github.event.inputs.max_tracks_per_run }}"}'
+        client-payload: '{"artist": "${{ steps.vars.outputs.artist }}", "album": "${{ steps.vars.outputs.album }}", "max_tracks_per_run": "${{ steps.vars.outputs.max_tracks }}"}'
 
   merge-album:
     needs: generate-tracks
