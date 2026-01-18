@@ -112,7 +112,7 @@ try:
     samples = np.array(pitched_audio.get_array_of_samples())
     
     nyquist = pitched_audio.frame_rate / 2
-    cutoff = 5000
+    cutoff = 8000
     normalized_cutoff = cutoff / nyquist
     
     # Use butterworth filter for smooth frequency response
